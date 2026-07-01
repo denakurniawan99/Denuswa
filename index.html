@@ -22,6 +22,10 @@
     --saving-soft:#F1E6C9;
     --donation:#8B5E7A;
     --donation-soft:#EDE0E7;
+    --suami:#35618F;
+    --suami-soft:#DEE6ED;
+    --istri:#B0577D;
+    --istri-soft:#F1DFE6;
     --shadow: 0 1px 0 rgba(38,48,74,0.06);
   }
   *{box-sizing:border-box;}
@@ -118,9 +122,6 @@
     grid-column:1 / -1;
     background:var(--ink);
     border-color:var(--ink);
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
   }
   .sum-card .dot{
     width:8px;height:8px;border-radius:50%;
@@ -143,8 +144,40 @@
     overflow:hidden;
     text-overflow:ellipsis;
   }
-  .sum-card.balance .lbl{color:#C8CCDC; margin-top:0;}
-  .sum-card.balance .val{color:#F7F2E7; margin-top:0; font-size:17px;}
+  .sum-card.balance .balance-top .lbl{color:#C8CCDC; margin-top:0;}
+  .sum-card.balance .balance-top .val{color:#F7F2E7; margin-top:0; font-size:17px;}
+
+  .balance-split{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin-top:10px;
+  }
+  .split-card{
+    border:1px solid var(--line);
+    border-radius:3px;
+    padding:11px 13px;
+  }
+  .split-card.suami{background:var(--suami-soft); border-color:var(--suami);}
+  .split-card.istri{background:var(--istri-soft); border-color:var(--istri);}
+  .split-card .lbl{
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    font-weight:600;
+  }
+  .split-card.suami .lbl{color:var(--suami);}
+  .split-card.istri .lbl{color:var(--istri);}
+  .split-card .val{
+    font-family:'JetBrains Mono',monospace;
+    font-weight:700;
+    font-size:14px;
+    margin-top:5px;
+    color:var(--ink);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
 
   section{padding:22px 20px 4px;}
   .section-title{
@@ -327,6 +360,39 @@
   .type-btn.active.saving{color:var(--saving); background:var(--saving-soft);}
   .type-btn.active.donation{color:var(--donation); background:var(--donation-soft);}
   .type-btn.active .t-name{color:inherit;}
+
+  .owner-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+    margin-bottom:16px;
+  }
+  .owner-btn{
+    border:1px solid var(--line);
+    background:var(--paper-alt);
+    border-radius:3px;
+    padding:10px;
+    text-align:center;
+    cursor:pointer;
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    color:var(--ink-soft);
+  }
+  .owner-btn.active.suami{color:var(--suami); background:var(--suami-soft); border-color:var(--suami);}
+  .owner-btn.active.istri{color:var(--istri); background:var(--istri-soft); border-color:var(--istri);}
+
+  .owner-tag{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    padding:1px 6px;
+    border-radius:8px;
+    display:inline-block;
+    margin-left:6px;
+    vertical-align:middle;
+  }
+  .owner-tag.suami{color:var(--suami); background:var(--suami-soft);}
+  .owner-tag.istri{color:var(--istri); background:var(--istri-soft);}
 
   label{
     display:block;
@@ -535,6 +601,12 @@
         <button class="type-btn donation" data-type="donasi"><span class="t-dot" style="background:var(--donation)"></span><span class="t-name">Donasi</span></button>
       </div>
 
+      <label style="margin-top:0;">Pemilik Dana</label>
+      <div class="owner-grid">
+        <button class="owner-btn suami" data-owner="suami">Suami</button>
+        <button class="owner-btn istri" data-owner="istri">Istri</button>
+      </div>
+
       <div class="card">
         <label for="srcInput" id="srcLabel">Sumber Dana</label>
         <input list="srcList" id="srcInput" type="text" placeholder="mis. Gaji Bulanan">
@@ -585,6 +657,8 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-database-compat.min.js"></script>
 <script>
 (function(){
   const TYPES = {
@@ -594,7 +668,26 @@
     donasi:     { color:'#8B5E7A', soft:'#EDE0E7', label:'Donasi', sign:-1, suggestions:['Zakat','Sedekah','Amal','Bencana Alam','Lainnya'] }
   };
 
-  let state = { transactions: [], currentMonth: new Date(), activeType: 'pemasukan', view: 'ringkasan' };
+  // ---------- Firebase ----------
+  const firebaseConfig = {
+    apiKey: "AIzaSyCF32dNqmv2t8nVSNEGZ79V3rxxWJ25L2g",
+    authDomain: "denuswa-7e057.firebaseapp.com",
+    databaseURL: "https://denuswa-7e057-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "denuswa-7e057",
+    storageBucket: "denuswa-7e057.firebasestorage.app",
+    messagingSenderId: "1095874014619",
+    appId: "1:1095874014619:web:27e4a6b6f5fdf1d5bd053e",
+    measurementId: "G-GWL8TPVCB8"
+  };
+  let dbRef = null;
+  try{
+    firebase.initializeApp(firebaseConfig);
+    dbRef = firebase.database().ref('transactions');
+  }catch(e){
+    console.error('Firebase init error', e);
+  }
+
+  let state = { transactions: [], currentMonth: new Date(), activeType: 'pemasukan', activeOwner: 'suami', view: 'ringkasan' };
   const fmtIDR = new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR', maximumFractionDigits:0 });
   const monthFmt = new Intl.DateTimeFormat('id-ID', { month:'long', year:'numeric' });
   const monthShortFmt = new Intl.DateTimeFormat('id-ID', { month:'short' });
@@ -619,21 +712,29 @@
     showToast._h = setTimeout(()=>t.classList.remove('show'), 1800);
   }
 
-  // ---------- Storage ----------
+  // ---------- Storage (Firebase Realtime Database) ----------
   async function loadData(){
     try{
-      const res = await window.storage.get('transactions', false);
-      state.transactions = res && res.value ? JSON.parse(res.value) : [];
+      if(!dbRef) throw new Error('Firebase belum siap');
+      const snap = await dbRef.get();
+      const val = snap.exists() ? snap.val() : null;
+      state.transactions = val ? Object.values(val) : [];
     }catch(e){
+      console.error('loadData', e);
       state.transactions = [];
+      showToast('Gagal memuat data dari Firebase');
     }
     render();
   }
   async function saveData(){
     try{
-      await window.storage.set('transactions', JSON.stringify(state.transactions), false);
+      if(!dbRef) throw new Error('Firebase belum siap');
+      const obj = {};
+      state.transactions.forEach(t=>{ obj[t.id] = t; });
+      await dbRef.set(obj);
     }catch(e){
-      showToast('Gagal menyimpan data');
+      console.error('saveData', e);
+      showToast('Gagal menyimpan ke Firebase');
     }
   }
 
@@ -681,6 +782,15 @@
   $('#srcList').innerHTML = TYPES.pemasukan.suggestions.map(s=>`<option value="${s}">`).join('');
   $('#dateInput').value = new Date().toISOString().slice(0,10);
 
+  // ---------- Owner selector (form) ----------
+  $$('.owner-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      state.activeOwner = btn.dataset.owner;
+      $$('.owner-btn').forEach(b=>b.classList.toggle('active', b===btn));
+    });
+  });
+  $('.owner-btn[data-owner=suami]').classList.add('active');
+
   // ---------- Submit ----------
   $('#submitBtn').addEventListener('click', async ()=>{
     const src = $('#srcInput').value.trim();
@@ -694,7 +804,7 @@
     if(!date){ hint.textContent = 'Pilih tanggal transaksi.'; hint.style.color='var(--expense)'; return; }
 
     state.transactions.push({
-      id: uid(), type: state.activeType, source: src, amount: amt, date, note
+      id: uid(), type: state.activeType, owner: state.activeOwner, source: src, amount: amt, date, note
     });
     await saveData();
 
@@ -723,25 +833,45 @@
     return totals;
   }
 
+  function balanceForOwner(list, owner){
+    const totals = totalsByType(list.filter(t=>t.owner===owner));
+    return totals.pemasukan - totals.pengeluaran - totals.tabungan - totals.donasi;
+  }
+
   function renderSummary(){
     const list = monthTrx();
     const totals = totalsByType(list);
     const balance = totals.pemasukan - totals.pengeluaran - totals.tabungan - totals.donasi;
+    const balSuami = balanceForOwner(list, 'suami');
+    const balIstri = balanceForOwner(list, 'istri');
     const strip = $('#summaryStrip');
     const items = [
-      { key:'balance', label:'Saldo Bersih', val: balance },
       { key:'pemasukan', label:'Pemasukan', val: totals.pemasukan },
       { key:'pengeluaran', label:'Pengeluaran', val: totals.pengeluaran },
       { key:'tabungan', label:'Tabungan', val: totals.tabungan },
       { key:'donasi', label:'Donasi', val: totals.donasi },
     ];
-    strip.innerHTML = items.map(it=>{
-      if(it.key==='balance'){
-        return `<div class="sum-card balance"><div class="lbl">${it.label}</div><div class="val">${fmtIDR.format(it.val)}</div></div>`;
-      }
+    const balanceCard = `<div class="sum-card balance" style="display:block;">
+      <div class="balance-top" style="display:flex; align-items:center; justify-content:space-between;">
+        <div class="lbl">Saldo Bersih (Keseluruhan)</div>
+        <div class="val">${fmtIDR.format(balance)}</div>
+      </div>
+      <div class="balance-split">
+        <div class="split-card suami">
+          <div class="lbl">Saldo Suami</div>
+          <div class="val">${fmtIDR.format(balSuami)}</div>
+        </div>
+        <div class="split-card istri">
+          <div class="lbl">Saldo Istri</div>
+          <div class="val">${fmtIDR.format(balIstri)}</div>
+        </div>
+      </div>
+    </div>`;
+    const otherCards = items.map(it=>{
       const c = TYPES[it.key].color;
       return `<div class="sum-card"><div class="lbl"><span class="dot" style="background:${c}"></span>${it.label}</div><div class="val" style="color:${c}">${fmtIDR.format(it.val)}</div></div>`;
     }).join('');
+    strip.innerHTML = balanceCard + otherCards;
   }
 
   function renderAllocChart(){
@@ -889,7 +1019,7 @@
         return `<div class="trx-row">
           <span class="trx-dot" style="background:${cfg.color}"></span>
           <div class="trx-mid">
-            <div class="trx-src">${escapeHtml(t.source)}</div>
+            <div class="trx-src">${escapeHtml(t.source)}${t.owner ? `<span class="owner-tag ${t.owner}">${t.owner === 'suami' ? 'Suami' : 'Istri'}</span>` : ''}</div>
             ${t.note ? `<div class="trx-note">${escapeHtml(t.note)}</div>` : ''}
           </div>
           <div class="trx-amt" style="color:${cfg.color}">${sign} ${fmtIDR.format(t.amount)}</div>
