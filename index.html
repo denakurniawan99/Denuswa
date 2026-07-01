@@ -103,6 +103,31 @@
     text-transform:capitalize;
   }
 
+  .settings-toggle{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-top:10px;
+    background:none;
+    border:none;
+    padding:2px 0;
+    color:var(--ink-soft);
+    font-family:'Inter',sans-serif;
+    font-size:12px;
+    cursor:pointer;
+    text-decoration:underline;
+    text-decoration-color:var(--line);
+    text-underline-offset:3px;
+  }
+  .settings-panel{
+    margin-top:10px;
+    background:var(--paper-alt);
+    border:1px solid var(--line);
+    border-radius:3px;
+    padding:14px;
+  }
+  .settings-panel .hint{margin-top:10px;}
+
   /* Summary grid */
   .summary-grid{
     display:grid;
@@ -178,6 +203,34 @@
     overflow:hidden;
     text-overflow:ellipsis;
   }
+
+  .mini-split{
+    display:flex;
+    gap:6px;
+    margin-top:7px;
+    flex-wrap:wrap;
+  }
+  .mini-split span{
+    font-family:'JetBrains Mono',monospace;
+    font-size:9.5px;
+    padding:1px 6px;
+    border-radius:8px;
+    white-space:nowrap;
+  }
+  .mini-split .ms-suami{color:var(--suami); background:var(--suami-soft);}
+  .mini-split .ms-istri{color:var(--istri); background:var(--istri-soft);}
+
+  .sum-card.balance.savings-card{
+    background:var(--saving);
+    border-color:var(--saving);
+  }
+  .balance-note{
+    font-size:11px;
+    color:#E4D9B8;
+    margin-top:10px;
+    line-height:1.4;
+  }
+  .sum-card.balance.savings-card .balance-note{color:#F3EAD4;}
 
   section{padding:22px 20px 4px;}
   .section-title{
@@ -553,6 +606,14 @@
       <span class="month-label" id="monthLabel">—</span>
       <button id="nextMonth" aria-label="Bulan berikutnya">&rsaquo;</button>
     </div>
+
+    <button class="settings-toggle" id="settingsToggle">⚙ Atur tanggal reset periode</button>
+    <div class="settings-panel" id="settingsPanel" style="display:none;">
+      <label style="margin-top:0;">Reset periode tiap tanggal</label>
+      <input type="number" id="cutoffInput" min="1" max="28" value="1">
+      <button class="submit-btn" id="saveCutoffBtn" style="margin-top:12px;">Simpan Pengaturan</button>
+      <p class="hint">Contoh: isi 25 kalau gajian tanggal 25 — periode akan berjalan dari tanggal 25 sampai tanggal 24 bulan berikutnya, lalu sisa dana otomatis masuk Tabungan.</p>
+    </div>
   </header>
 
   <div class="summary-grid" id="summaryStrip"></div>
@@ -597,7 +658,7 @@
       <div class="type-grid">
         <button class="type-btn income" data-type="pemasukan"><span class="t-dot" style="background:var(--income)"></span><span class="t-name">Pemasukan</span></button>
         <button class="type-btn expense" data-type="pengeluaran"><span class="t-dot" style="background:var(--expense)"></span><span class="t-name">Pengeluaran</span></button>
-        <button class="type-btn saving" data-type="tabungan"><span class="t-dot" style="background:var(--saving)"></span><span class="t-name">Tabungan</span></button>
+        <button class="type-btn saving" data-type="tabungan"><span class="t-dot" style="background:var(--saving)"></span><span class="t-name">Tabungan Manual</span></button>
         <button class="type-btn donation" data-type="donasi"><span class="t-dot" style="background:var(--donation)"></span><span class="t-name">Donasi</span></button>
       </div>
 
@@ -664,7 +725,7 @@
   const TYPES = {
     pemasukan: { color:'#3B7A57', soft:'#E1EEE3', label:'Pemasukan', sign:1, suggestions:['Gaji','Bonus','Freelance','Investasi','Hadiah','Lainnya'] },
     pengeluaran:{ color:'#C1502E', soft:'#F6E2D8', label:'Pengeluaran', sign:-1, suggestions:['Makanan','Transportasi','Tagihan','Belanja','Hiburan','Kesehatan','Lainnya'] },
-    tabungan:   { color:'#A9781E', soft:'#F1E6C9', label:'Tabungan', sign:-1, suggestions:['Tabungan Darurat','Investasi Rutin','Dana Liburan','Lainnya'] },
+    tabungan:   { color:'#A9781E', soft:'#F1E6C9', label:'Tabungan Manual', sign:-1, suggestions:['Tabungan Darurat','Investasi Rutin','Dana Liburan','Lainnya'] },
     donasi:     { color:'#8B5E7A', soft:'#EDE0E7', label:'Donasi', sign:-1, suggestions:['Zakat','Sedekah','Amal','Bencana Alam','Lainnya'] }
   };
 
@@ -680,14 +741,16 @@
     measurementId: "G-GWL8TPVCB8"
   };
   let dbRef = null;
+  let settingsRef = null;
   try{
     firebase.initializeApp(firebaseConfig);
     dbRef = firebase.database().ref('transactions');
+    settingsRef = firebase.database().ref('settings');
   }catch(e){
     console.error('Firebase init error', e);
   }
 
-  let state = { transactions: [], currentMonth: new Date(), activeType: 'pemasukan', activeOwner: 'suami', view: 'ringkasan' };
+  let state = { transactions: [], currentMonth: new Date(), activeType: 'pemasukan', activeOwner: 'suami', view: 'ringkasan', cutoffDay: 1 };
   const fmtIDR = new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR', maximumFractionDigits:0 });
   const monthFmt = new Intl.DateTimeFormat('id-ID', { month:'long', year:'numeric' });
   const monthShortFmt = new Intl.DateTimeFormat('id-ID', { month:'short' });
@@ -713,6 +776,28 @@
   }
 
   // ---------- Storage (Firebase Realtime Database) ----------
+  async function loadSettings(){
+    try{
+      if(!settingsRef) return;
+      const snap = await settingsRef.get();
+      if(snap.exists()){
+        const val = snap.val();
+        const day = Number(val && val.cutoffDay);
+        if(day >= 1 && day <= 28) state.cutoffDay = day;
+      }
+    }catch(e){
+      console.error('loadSettings', e);
+    }
+  }
+  async function saveSettings(){
+    try{
+      if(!settingsRef) throw new Error('Firebase belum siap');
+      await settingsRef.set({ cutoffDay: state.cutoffDay });
+    }catch(e){
+      console.error('saveSettings', e);
+      showToast('Gagal menyimpan pengaturan ke Firebase');
+    }
+  }
   async function loadData(){
     try{
       if(!dbRef) throw new Error('Firebase belum siap');
@@ -738,14 +823,40 @@
     }
   }
 
-  // ---------- Month navigation ----------
-  function monthKey(d){ return d.getFullYear()+'-'+d.getMonth(); }
+  // ---------- Period (reset date) navigation ----------
+  function periodRangeForAnchor(anchor, cutoffDay){
+    const start = new Date(anchor.getFullYear(), anchor.getMonth(), cutoffDay);
+    const end = new Date(start.getFullYear(), start.getMonth()+1, cutoffDay);
+    return { start, end };
+  }
+  function periodKeyFromStart(start){
+    return start.getFullYear()+'-'+start.getMonth()+'-'+start.getDate();
+  }
+  function periodKeyForDate(date, cutoffDay){
+    const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
+    const start = (d >= cutoffDay) ? new Date(y, m, cutoffDay) : new Date(y, m-1, cutoffDay);
+    return periodKeyFromStart(start);
+  }
+  function periodKeyForAnchor(anchor, cutoffDay){
+    return periodKeyFromStart(periodRangeForAnchor(anchor, cutoffDay).start);
+  }
+  function monthKey(d){ return periodKeyForDate(d, state.cutoffDay); }
   function inCurrentMonth(dateStr){
     const d = new Date(dateStr+'T00:00:00');
-    return monthKey(d) === monthKey(state.currentMonth);
+    return periodKeyForDate(d, state.cutoffDay) === periodKeyForAnchor(state.currentMonth, state.cutoffDay);
+  }
+  function periodLabel(){
+    if(state.cutoffDay === 1){
+      return monthFmt.format(state.currentMonth);
+    }
+    const r = periodRangeForAnchor(state.currentMonth, state.cutoffDay);
+    const endInclusive = new Date(r.end.getFullYear(), r.end.getMonth(), r.end.getDate()-1);
+    const dfmt = new Intl.DateTimeFormat('id-ID', { day:'numeric', month:'short' });
+    const yfmt = new Intl.DateTimeFormat('id-ID', { year:'numeric' });
+    return `${dfmt.format(r.start)} – ${dfmt.format(endInclusive)} ${yfmt.format(endInclusive)}`;
   }
   function updateMonthLabel(){
-    $('#monthLabel').textContent = monthFmt.format(state.currentMonth);
+    $('#monthLabel').textContent = periodLabel();
   }
   $('#prevMonth').addEventListener('click', ()=>{
     state.currentMonth = new Date(state.currentMonth.getFullYear(), state.currentMonth.getMonth()-1, 1);
@@ -790,6 +901,28 @@
     });
   });
   $('.owner-btn[data-owner=suami]').classList.add('active');
+
+  // ---------- Settings (cutoff day) ----------
+  $('#settingsToggle').addEventListener('click', ()=>{
+    const panel = $('#settingsPanel');
+    const showing = panel.style.display !== 'none';
+    if(showing){
+      panel.style.display = 'none';
+    }else{
+      $('#cutoffInput').value = state.cutoffDay;
+      panel.style.display = 'block';
+    }
+  });
+  $('#saveCutoffBtn').addEventListener('click', async ()=>{
+    let val = parseInt($('#cutoffInput').value, 10);
+    if(!val || val < 1) val = 1;
+    if(val > 28) val = 28;
+    state.cutoffDay = val;
+    await saveSettings();
+    showToast('Tanggal reset periode: tanggal ' + val);
+    $('#settingsPanel').style.display = 'none';
+    render();
+  });
 
   // ---------- Submit ----------
   $('#submitBtn').addEventListener('click', async ()=>{
@@ -838,40 +971,126 @@
     return totals.pemasukan - totals.pengeluaran - totals.tabungan - totals.donasi;
   }
 
+  // ---------- Auto savings ledger (rollover per period) ----------
+  function groupByPeriod(transactions, cutoffDay){
+    const groups = {};
+    transactions.forEach(t=>{
+      const d = new Date(t.date+'T00:00:00');
+      const key = periodKeyForDate(d, cutoffDay);
+      if(!groups[key]){
+        const [y,m,day] = key.split('-').map(Number);
+        const start = new Date(y, m, day);
+        const end = new Date(y, m+1, day);
+        groups[key] = { start, end, items: [] };
+      }
+      groups[key].items.push(t);
+    });
+    return groups;
+  }
+
+  function ownerSavingsAsOf(owner, asOfPeriodEnd, today){
+    const groups = groupByPeriod(state.transactions.filter(t=>t.owner===owner), state.cutoffDay);
+    let savings = 0;
+    Object.values(groups).forEach(g=>{
+      if(g.end > asOfPeriodEnd) return; // periode setelah horizon yang dilihat, lewati
+      const totals = totalsByType(g.items);
+      const manual = totals.tabungan;
+      const leftover = totals.pemasukan - totals.pengeluaran - totals.donasi;
+      const closedNow = g.end <= today;
+      if(closedNow){
+        savings += manual + leftover; // periode sudah tutup: sisa/kekurangan otomatis masuk/ambil tabungan
+      }else{
+        savings += manual; // periode masih berjalan: setoran manual tetap dihitung
+        if(leftover < 0) savings += leftover; // kekurangan real-time otomatis ditutup dari tabungan
+      }
+    });
+    return savings;
+  }
+
+  function miniSplit(list, type){
+    const sAmt = list.filter(t=>t.owner==='suami' && t.type===type).reduce((a,t)=>a+t.amount,0);
+    const iAmt = list.filter(t=>t.owner==='istri' && t.type===type).reduce((a,t)=>a+t.amount,0);
+    if(sAmt===0 && iAmt===0) return '';
+    return `<div class="mini-split"><span class="ms-suami">Suami Rp${fmtCompact(sAmt)}</span><span class="ms-istri">Istri Rp${fmtCompact(iAmt)}</span></div>`;
+  }
+
   function renderSummary(){
     const list = monthTrx();
     const totals = totalsByType(list);
     const balance = totals.pemasukan - totals.pengeluaran - totals.tabungan - totals.donasi;
     const balSuami = balanceForOwner(list, 'suami');
     const balIstri = balanceForOwner(list, 'istri');
+
+    const periodEnd = periodRangeForAnchor(state.currentMonth, state.cutoffDay).end;
+    const today = new Date();
+    const isClosedPeriod = periodEnd <= today;
+
+    const savSuami = ownerSavingsAsOf('suami', periodEnd, today);
+    const savIstri = ownerSavingsAsOf('istri', periodEnd, today);
+    const savTotal = savSuami + savIstri;
+
     const strip = $('#summaryStrip');
-    const items = [
-      { key:'pemasukan', label:'Pemasukan', val: totals.pemasukan },
-      { key:'pengeluaran', label:'Pengeluaran', val: totals.pengeluaran },
-      { key:'tabungan', label:'Tabungan', val: totals.tabungan },
-      { key:'donasi', label:'Donasi', val: totals.donasi },
-    ];
-    const balanceCard = `<div class="sum-card balance" style="display:block;">
+
+    let flowNote;
+    if(isClosedPeriod){
+      flowNote = 'Periode ini sudah selesai — hasilnya sudah otomatis masuk ke Tabungan.';
+    }else if(balance < 0){
+      flowNote = 'Kekurangan otomatis ditutup dari Tabungan.';
+    }else{
+      flowNote = 'Sisa dana di akhir periode otomatis masuk ke Tabungan.';
+    }
+
+    const flowCard = `<div class="sum-card balance" style="display:block;">
       <div class="balance-top" style="display:flex; align-items:center; justify-content:space-between;">
-        <div class="lbl">Saldo Bersih (Keseluruhan)</div>
+        <div class="lbl">Arus Kas Periode Ini</div>
         <div class="val">${fmtIDR.format(balance)}</div>
       </div>
       <div class="balance-split">
         <div class="split-card suami">
-          <div class="lbl">Saldo Suami</div>
+          <div class="lbl">Suami</div>
           <div class="val">${fmtIDR.format(balSuami)}</div>
         </div>
         <div class="split-card istri">
-          <div class="lbl">Saldo Istri</div>
+          <div class="lbl">Istri</div>
           <div class="val">${fmtIDR.format(balIstri)}</div>
         </div>
       </div>
+      <div class="balance-note">${flowNote}</div>
     </div>`;
+
+    const savingsCard = `<div class="sum-card balance savings-card" style="display:block;">
+      <div class="balance-top" style="display:flex; align-items:center; justify-content:space-between;">
+        <div class="lbl">Tabungan Terkumpul</div>
+        <div class="val">${fmtIDR.format(savTotal)}</div>
+      </div>
+      <div class="balance-split">
+        <div class="split-card suami">
+          <div class="lbl">Suami</div>
+          <div class="val">${fmtIDR.format(savSuami)}</div>
+        </div>
+        <div class="split-card istri">
+          <div class="lbl">Istri</div>
+          <div class="val">${fmtIDR.format(savIstri)}</div>
+        </div>
+      </div>
+      <div class="balance-note">Termasuk sisa otomatis dari periode-periode sebelumnya dan setoran manual.</div>
+    </div>`;
+
+    const items = [
+      { key:'pemasukan', label:'Pemasukan', val: totals.pemasukan },
+      { key:'pengeluaran', label:'Pengeluaran', val: totals.pengeluaran },
+      { key:'tabungan', label:'Tabungan Manual', val: totals.tabungan },
+      { key:'donasi', label:'Donasi', val: totals.donasi },
+    ];
     const otherCards = items.map(it=>{
       const c = TYPES[it.key].color;
-      return `<div class="sum-card"><div class="lbl"><span class="dot" style="background:${c}"></span>${it.label}</div><div class="val" style="color:${c}">${fmtIDR.format(it.val)}</div></div>`;
+      return `<div class="sum-card">
+        <div class="lbl"><span class="dot" style="background:${c}"></span>${it.label}</div>
+        <div class="val" style="color:${c}">${fmtIDR.format(it.val)}</div>
+        ${miniSplit(list, it.key)}
+      </div>`;
     }).join('');
-    strip.innerHTML = balanceCard + otherCards;
+    strip.innerHTML = flowCard + savingsCard + otherCards;
   }
 
   function renderAllocChart(){
@@ -955,13 +1174,13 @@
       months.push(new Date(base.getFullYear(), base.getMonth()-i, 1));
     }
 
-    const buckets = months.map(d=>({ date:d, key: monthKey(d), pemasukan:0, pengeluaran:0 }));
+    const buckets = months.map(d=>({ date:d, key: periodKeyForAnchor(d, state.cutoffDay), pemasukan:0, pengeluaran:0 }));
     const byKey = {};
     buckets.forEach(b=>{ byKey[b.key] = b; });
 
     state.transactions.forEach(t=>{
       const d = new Date(t.date+'T00:00:00');
-      const b = byKey[monthKey(d)];
+      const b = byKey[periodKeyForDate(d, state.cutoffDay)];
       if(!b) return;
       if(t.type === 'pemasukan') b.pemasukan += t.amount;
       if(t.type === 'pengeluaran') b.pengeluaran += t.amount;
@@ -977,7 +1196,7 @@
     }
 
     wrap.innerHTML = `<div class="trend-chart">${buckets.map(b=>{
-      const isCurrent = b.key === monthKey(base);
+      const isCurrent = b.key === periodKeyForAnchor(base, state.cutoffDay);
       const incH = Math.round(b.pemasukan / max * 100);
       const expH = Math.round(b.pengeluaran / max * 100);
       return `<div class="trend-month ${isCurrent ? 'is-current' : ''}">
@@ -1000,8 +1219,8 @@
     const list = monthTrx().slice().sort((a,b)=> b.date.localeCompare(a.date) || 0);
     const card = $('#historyCard');
     $('#riwayatSub').textContent = list.length
-      ? `${list.length} transaksi tercatat pada ${monthFmt.format(state.currentMonth)}.`
-      : `Belum ada transaksi pada ${monthFmt.format(state.currentMonth)}.`;
+      ? `${list.length} transaksi tercatat pada periode ${periodLabel()}.`
+      : `Belum ada transaksi pada periode ${periodLabel()}.`;
 
     if(list.length === 0){
       card.innerHTML = `<div class="empty"><b>Belum ada transaksi</b>Catatan bulan ini masih kosong.</div>`;
@@ -1043,7 +1262,10 @@
     try{ renderHistory(); }catch(e){ console.error('history', e); }
   }
 
-  loadData();
+  (async function init(){
+    await loadSettings();
+    await loadData();
+  })();
 })();
 </script>
 </body>
