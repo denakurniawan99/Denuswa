@@ -203,6 +203,12 @@
     overflow:hidden;
     text-overflow:ellipsis;
   }
+  .split-note{
+    font-size:10px;
+    color:var(--ink-soft);
+    margin-top:4px;
+    font-style:italic;
+  }
 
   .mini-split{
     display:flex;
@@ -1017,9 +1023,16 @@
   function renderSummary(){
     const list = monthTrx();
     const totals = totalsByType(list);
-    const balance = totals.pemasukan - totals.pengeluaran - totals.tabungan - totals.donasi;
     const balSuami = balanceForOwner(list, 'suami');
     const balIstri = balanceForOwner(list, 'istri');
+    const ownerlessList = list.filter(t=>t.owner !== 'suami' && t.owner !== 'istri');
+    const ownerlessTotals = totalsByType(ownerlessList);
+    const ownerlessBalance = ownerlessTotals.pemasukan - ownerlessTotals.pengeluaran - ownerlessTotals.tabungan - ownerlessTotals.donasi;
+    // Defisit salah satu pemilik ditutup dari tabungannya sendiri, bukan dari sisa pemilik lain —
+    // jadi total gabungan dijumlah dari kas yang benar-benar tersedia (floor 0) per orang.
+    const cashSuami = Math.max(0, balSuami);
+    const cashIstri = Math.max(0, balIstri);
+    const balance = cashSuami + cashIstri + ownerlessBalance;
 
     const periodEnd = periodRangeForAnchor(state.currentMonth, state.cutoffDay).end;
     const today = new Date();
@@ -1034,11 +1047,14 @@
     let flowNote;
     if(isClosedPeriod){
       flowNote = 'Periode ini sudah selesai — hasilnya sudah otomatis masuk ke Tabungan.';
-    }else if(balance < 0){
-      flowNote = 'Kekurangan otomatis ditutup dari Tabungan.';
+    }else if(balSuami < 0 || balIstri < 0){
+      flowNote = 'Kekurangan otomatis ditutup dari tabungan milik masing-masing, tidak memotong pihak lain.';
     }else{
-      flowNote = 'Sisa dana di akhir periode otomatis masuk ke Tabungan.';
+      flowNote = 'Sisa dana di akhir periode otomatis masuk ke Tabungan milik masing-masing.';
     }
+
+    const suamiNote = balSuami < 0 ? '<div class="split-note">otomatis dari tabungan Suami</div>' : '';
+    const istriNote = balIstri < 0 ? '<div class="split-note">otomatis dari tabungan Istri</div>' : '';
 
     const flowCard = `<div class="sum-card balance" style="display:block;">
       <div class="balance-top" style="display:flex; align-items:center; justify-content:space-between;">
@@ -1049,10 +1065,12 @@
         <div class="split-card suami">
           <div class="lbl">Suami</div>
           <div class="val">${fmtIDR.format(balSuami)}</div>
+          ${suamiNote}
         </div>
         <div class="split-card istri">
           <div class="lbl">Istri</div>
           <div class="val">${fmtIDR.format(balIstri)}</div>
+          ${istriNote}
         </div>
       </div>
       <div class="balance-note">${flowNote}</div>
