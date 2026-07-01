@@ -640,7 +640,7 @@
 
     <section>
       <div class="section-title">Alokasi Dana</div>
-      <p class="section-sub">Proporsi pemasukan, pengeluaran, tabungan, dan donasi bulan ini.</p>
+      <p class="section-sub">Ke mana perginya pemasukan periode ini: pengeluaran, tabungan, donasi, atau masih sisa.</p>
       <div class="card">
         <div class="chart-wrap" id="allocChartWrap"></div>
       </div>
@@ -1114,52 +1114,69 @@
   function renderAllocChart(){
     const list = monthTrx();
     const totals = totalsByType(list);
-    const labels = ['Pemasukan','Pengeluaran','Tabungan','Donasi'];
-    const keys = ['pemasukan','pengeluaran','tabungan','donasi'];
-    const data = keys.map(k=>totals[k]);
-    const colors = keys.map(k=>TYPES[k].color);
-    const total = data.reduce((a,b)=>a+b,0);
+    const income = totals.pemasukan;
     const wrap = $('#allocChartWrap');
 
-    if(total <= 0){
-      wrap.innerHTML = `<div class="empty"><b>Belum ada data</b>Tambahkan transaksi untuk melihat alokasi dana.</div>`;
+    if(income <= 0){
+      wrap.innerHTML = `<div class="empty"><b>Belum ada pemasukan</b>Catat pemasukan periode ini untuk melihat alokasinya.</div>`;
       return;
     }
 
-    // Build conic-gradient stops for the donut
+    const pengeluaran = totals.pengeluaran;
+    const tabungan = totals.tabungan;
+    const donasi = totals.donasi;
+    const used = pengeluaran + tabungan + donasi;
+    const sisa = income - used;
+
+    const keys = ['pengeluaran','tabungan','donasi'];
+    const labels = ['Pengeluaran','Tabungan Manual','Donasi'];
+    const colors = [TYPES.pengeluaran.color, TYPES.tabungan.color, TYPES.donasi.color];
+    const data = [pengeluaran, tabungan, donasi];
+
+    if(sisa > 0){
+      keys.push('sisa'); labels.push('Sisa Belum Terpakai'); colors.push(TYPES.pemasukan.color); data.push(sisa);
+    }
+
+    // Basis derajat donut: jika terpakai melebihi pemasukan (defisit), pakai 'used' supaya proporsi tetap pas 360°
+    const denom = Math.max(income, used);
     let acc = 0;
     const stops = [];
-    keys.forEach((k,i)=>{
-      if(data[i] <= 0) return;
-      const start = acc / total * 360;
-      acc += data[i];
-      const end = acc / total * 360;
+    data.forEach((v,i)=>{
+      if(v <= 0) return;
+      const start = acc / denom * 360;
+      acc += v;
+      const end = acc / denom * 360;
       stops.push(`${colors[i]} ${start}deg ${end}deg`);
     });
     const gradient = stops.length ? stops.join(', ') : 'var(--paper-deep) 0deg 360deg';
 
-    const rows = keys.map((k,i)=>{
-      const pct = total>0 ? Math.round(data[i]/total*100) : 0;
-      if(data[i] <= 0) return '';
+    const rows = data.map((v,i)=>{
+      if(v <= 0) return '';
+      const pct = Math.round(v / income * 100);
       return `<div class="dl-row">
         <div class="dl-top">
           <span class="dl-name"><i style="background:${colors[i]}"></i>${labels[i]}</span>
           <span class="dl-pct">${pct}%</span>
         </div>
-        <div class="dl-bar-bg"><div class="dl-bar-fg" style="width:${pct}%; background:${colors[i]}"></div></div>
+        <div class="dl-bar-bg"><div class="dl-bar-fg" style="width:${Math.min(pct,100)}%; background:${colors[i]}"></div></div>
       </div>`;
     }).join('');
+
+    const overspendNote = sisa < 0
+      ? `<div class="balance-note" style="color:var(--expense);">Pengeluaran, tabungan, dan donasi melebihi pemasukan sebesar ${fmtIDR.format(Math.abs(sisa))} — otomatis ditutup dari tabungan.</div>`
+      : '';
 
     wrap.innerHTML = `
       <div class="donut-row">
         <div class="donut" style="background:conic-gradient(${gradient})">
           <div class="donut-center">
-            <div class="dc-lbl">Total</div>
-            <div class="dc-val">${fmtIDR.format(total).replace('Rp','Rp ')}</div>
+            <div class="dc-lbl">Pemasukan</div>
+            <div class="dc-val">${fmtIDR.format(income).replace('Rp','Rp ')}</div>
           </div>
         </div>
         <div class="donut-legend">${rows}</div>
-      </div>`;
+      </div>
+      ${overspendNote}`;
   }
 
   function renderIncomeChart(){
